@@ -14,6 +14,11 @@ provider "aws" {
   region = "us-east-1"
 }
 
+# Local
+locals {
+  star-domain-zone-root = "*.${var.domains-zone-root}"
+}
+
 ## Route 53
 # Provides details about the zone
 data "aws_route53_zone" "main" {
@@ -25,8 +30,8 @@ data "aws_route53_zone" "main" {
 # Creates the wildcard certificate *.<yourdomain.com>
 resource "aws_acm_certificate" "wildcard_website" {
   provider                  = aws.us-east-1
-  domain_name               = var.domains-zone-root
-  subject_alternative_names = ["*.${var.domains-zone-root}"]
+  domain_name               = var.domains-zone-root == var.website-domain-main ? var.domains-zone-root : locals.star-domain-zone-root
+  subject_alternative_names = var.domains-zone-root == var.website-domain-main ? [locals.star-domain-zone-root] : []
   validation_method         = "DNS"
 
   tags = merge(var.tags, {
@@ -75,8 +80,7 @@ data "aws_acm_certificate" "wildcard_website" {
     aws_acm_certificate_validation.wildcard_cert,
   ]
 
-  # This logic on the domain allows us to support subdomains as "website-domain-main".
-  domain      = length(regexall(var.domains-zone-root, var.website-domain-main)) > 0 ? var.domains-zone-root : var.website-domain-main
+  domain      = length(regexall(var.domains-zone-root, var.website-domain-main)) > 0 ? locals.star-domain-zone-root : var.website-domain-main
   statuses    = ["ISSUED"]
   most_recent = true
 }
@@ -131,6 +135,7 @@ resource "aws_s3_bucket" "website_root" {
 
 # Creates bucket for the website handling the redirection (if required), e.g. from https://www.example.com to https://example.com
 resource "aws_s3_bucket" "website_redirect" {
+  count = var.website-domain-redirect != null ? 1 : 0
   bucket        = "${var.website-domain-main}-redirect"
   acl           = "public-read"
   force_destroy = true
@@ -283,14 +288,15 @@ POLICY
 
 # Creates the CloudFront distribution to serve the redirection website (if redirection is required)
 resource "aws_cloudfront_distribution" "website_cdn_redirect" {
+  count = var.website-domain-redirect != null ? 1 : 0
   enabled     = true
   price_class = "PriceClass_All"
   # Select the correct PriceClass depending on who the CDN is supposed to serve (https://docs.aws.amazon.com/AmazonCloudFront/latest/DeveloperGuide/PriceClass.html)
   aliases = [var.website-domain-redirect]
 
   origin {
-    origin_id   = "origin-bucket-${aws_s3_bucket.website_redirect.id}"
-    domain_name = aws_s3_bucket.website_redirect.website_endpoint
+    origin_id   = "origin-bucket-${aws_s3_bucket.website_redirect[count.index].id}"
+    domain_name = aws_s3_bucket.website_redirect[count.index].website_endpoint
 
     custom_origin_config {
       http_port              = 80
@@ -308,7 +314,7 @@ resource "aws_cloudfront_distribution" "website_cdn_redirect" {
   default_cache_behavior {
     allowed_methods  = ["GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT", "DELETE"]
     cached_methods   = ["GET", "HEAD"]
-    target_origin_id = "origin-bucket-${aws_s3_bucket.website_redirect.id}"
+    target_origin_id = "origin-bucket-${aws_s3_bucket.website_redirect[count.index].id}"
     min_ttl          = "0"
     default_ttl      = "300"
     max_ttl          = "1200"
@@ -350,13 +356,14 @@ resource "aws_cloudfront_distribution" "website_cdn_redirect" {
 
 # Creates the DNS record to point on the CloudFront distribution ID that handles the redirection website
 resource "aws_route53_record" "website_cdn_redirect_record" {
+  count = var.website-domain-redirect != null ? 1 : 0
   zone_id = data.aws_route53_zone.main.zone_id
   name    = var.website-domain-redirect
   type    = "A"
 
   alias {
-    name                   = aws_cloudfront_distribution.website_cdn_redirect.domain_name
-    zone_id                = aws_cloudfront_distribution.website_cdn_redirect.hosted_zone_id
+    name                   = aws_cloudfront_distribution.website_cdn_redirect[count.index].domain_name
+    zone_id                = aws_cloudfront_distribution.website_cdn_redirect[count.index].hosted_zone_id
     evaluate_target_health = false
   }
 }
