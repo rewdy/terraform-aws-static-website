@@ -75,7 +75,8 @@ data "aws_acm_certificate" "wildcard_website" {
     aws_acm_certificate_validation.wildcard_cert,
   ]
 
-  domain      = var.website-domain-main
+  # This logic on the domain allows us to support subdomains as "website-domain-main".
+  domain      = length(regexall(var.domains-zone-root, var.website-domain-main)) > 0 ? var.domains-zone-root : var.website-domain-main
   statuses    = ["ISSUED"]
   most_recent = true
 }
