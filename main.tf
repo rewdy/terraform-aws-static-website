@@ -30,8 +30,8 @@ data "aws_route53_zone" "main" {
 # Creates the wildcard certificate *.<yourdomain.com>
 resource "aws_acm_certificate" "wildcard_website" {
   provider                  = aws.us-east-1
-  domain_name               = var.domains-zone-root == var.website-domain-main ? var.domains-zone-root : locals.star-domain-zone-root
-  subject_alternative_names = var.domains-zone-root == var.website-domain-main ? [locals.star-domain-zone-root] : []
+  domain_name               = var.domains-zone-root == var.website-domain-main ? var.domains-zone-root : local.star-domain-zone-root
+  subject_alternative_names = var.domains-zone-root == var.website-domain-main ? [local.star-domain-zone-root] : []
   validation_method         = "DNS"
 
   tags = merge(var.tags, {
@@ -80,7 +80,7 @@ data "aws_acm_certificate" "wildcard_website" {
     aws_acm_certificate_validation.wildcard_cert,
   ]
 
-  domain      = length(regexall(var.domains-zone-root, var.website-domain-main)) > 0 ? locals.star-domain-zone-root : var.website-domain-main
+  domain      = length(regexall(var.domains-zone-root, var.website-domain-main)) > 0 ? local.star-domain-zone-root : var.website-domain-main
   statuses    = ["ISSUED"]
   most_recent = true
 }
